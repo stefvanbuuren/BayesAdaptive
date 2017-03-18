@@ -1,0 +1,44 @@
+---
+output:
+  md_document:
+    variant: markdown_github
+bibliography: refs.bibtex
+---
+
+<!-- README.md is generated from README.Rmd. Please edit that file -->
+
+```{r, echo = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "README-"
+)
+```
+
+# BayesAdaptive: Bayesian response-adaptive designs for multi-arm sequential clinical trials
+
+The `BayesAdaptive` package was written by Steffen Ventz and is available from 
+[Steffen Ventz R Packages](http://bcb.dfci.harvard.edu/~steffen/software.html).
+
+This repository starts with `BayesAdaptive` version 1.0 and implements some 
+tweaks to adapt it to current `R version 3.3.3`. 
+
+## Installation
+
+The `BayesAdaptive` package can be installed from GitHub as follows: 
+
+```{r eval = FALSE}
+install.packages("devtools")
+devtools::install_github(repo = "stefvanbuuren/BayesAdaptive")
+```
+
+
+## More information
+
+The package contains a vignette that demonstrates the functionality. Also, see
+the paper by Ventz et.al. [@ventz2017].
+
+## References
+
+
+
