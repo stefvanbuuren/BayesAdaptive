@@ -1,0 +1,355 @@
+---
+title: "Vignette: Introduction to BayesAdaptive"
+author: "Steffen Ventz"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Introduction to BayesAdaptive}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\usepackage[utf8]{inputenc}
+---
+
+# Introduction
+
+This  document gives a short introduction to the package **BayesAdaptive**, which can be used to design and 
+conduct Bayesian response adaptive (BAR) trials.  In the design phase, the package is used to compute operating characteristics of a BAR design, where the package supports either a  subpopulation finding design (SFD) or a subpopulation stratified design (SSD). 
+In the experimental phase, while conducting the trial, the package enables  (a) randomizing patients to treatment arms and (b) checking  early stopping rules for futility/efficacy.
+
+Here, we focus  on the design phase and show how to set up a set of simulations. 
+Typically we choose the sample size based on a set of alternative treatment scenarios.
+
+  
+To simulate trials  you will have to proceed in three steps: 
+
+(1) Simulate arrival and potential outcome data.
+
+(2) Specify  design options and prior parameter. 
+
+(3) Run simulations using the data generated in 1. under the option specified in 2.
+
+
+
+
+
+
+
+
+
+
+#  Arrival and Outcome Data
+In the first step you have to generate patient arrival and potential outcome data. 
+The functions **arrival.process()** and **get.outcome()** generate such datasets. Throughout the document we  follow a short  example.  We generate 20 datasets and start by defining a variable that specifies the number of datasets, and a list of labels for  disease types,  treatment arms and  subpopulations. 
+
+```{r}
+library(BayesAdaptive)
+nr.datasets        =20                                  # number of data-sets
+NAME  = list(NAME.D=paste0("disease_", 1:2),            # label for disease types    
+             NAME.A=c("control", paste0("agent", 1:3)), # label for arms    
+             NAME.M=paste0("module", 1:3))              # label for subpopulations    
+```
+
+
+
+
+
+## Arrival data
+Patient arrival data-sets are generated with  **arrival.process()** based on a homogeneous Poisson process.  The function requires a matrix of arrival-rates, **rates.by.disease**, and  total sample sizes, **mutants.by.disease**, where for both matrices the element $(m,d)$ denotes the mean accrual per week and the total accrual of patients with disease $d$ in subpopulation $m$. Instead of **mutants.by.disease** you can also specify 
+**mutants.by.module** in which case the total number of patients by subpopulation $N_m =\sum_d N_{d,m}$ is fixed, but the number of patients with disease $d$, $N_{d,m}$, is random. We specify a design with 3 subpopulations and 2 disease types, where for each combination of disease and subpopulation we specify an overall sample size of  $N_{d,m}=100$ patients.
+```{r}
+(mutants.by.disease = matrix(100, 3,2, dimnames = list(NAME$NAME.M, NAME$NAME.D)) )
+```
+And we specify the  accrual rates as
+```{r}
+(rates.by.disease   = matrix( c(1.2, 0.7, 1.0, 0.5, 2.2, 0.9), 3,2, 
+                              dimnames = list(NAME$NAME.M, NAME$NAME.D)))
+```
+Lastly we  generate **nr.datasets=20** patient arrival data-sets with **arrival.process()** where we fix the seed at 123.
+```{r}
+Arrival = arrival.process(
+  nr.datasets        = nr.datasets, 
+  seed               = 123, 
+  rates.by.disease   = rates.by.disease,  
+  mutants.by.disease = mutants.by.disease)
+```
+The output **Arrival** is a list of arrival datasets, where
+each element **Arrival[[n]]** is a matrix with  **sum(mutants.by.disease)** $=2 \times 3  \times 100=600$ rows and 3 columns.
+The   n-th row of each matrix **Arrival[[n]][i,]** denotes the  arrival time, the disease and the subpopulation of the i-th patient. For instance, the 10th patient in the first data set enters the trial  at week 1,  belongs to subpopulation 3, and has    disease 1.
+```{r}
+Arrival[[1]][10:12,]
+```
+We can quickly check the total number of patients in the data-set with  $(d,m)$ combination of disease and mutation
+```{r}
+## number of patient by subpopulation and disease
+xtabs(~ Disease + Module, Arrival[[1]] )
+```
+which is 100 as desired.
+
+
+
+## Potential Outcome  Data 
+We also generate potential outcome data before simulating any trial. 
+This speeds up computations when we simulate trials. Moreover using the same outcome data in simulations under different prior/randomization parameters reduces the  Monet-Carlo error when we compare trial results across prior/randomization parameters.
+
+To fix a response-scenario, we specify the probability of response to treatment $a$  for each disease and subpopulation $(d,m)$. Let's consider 3 experimental arms and a standard of care. The  response rate equals 0.3 for the standard of care and for the second/third experimental arms  in population one, and a rate of 0.4 for the same arms in population 2 and 3. Agent 1 has a positive treatment effect of 0.25 in subpopulation 1 and 2.
+
+```{r}
+rate       = array(dim = c(2,4,3), dimnames = NAME ); 
+rate[,,1]  = .3
+rate[,,-1] = .4
+rate[,2,1] = .55
+rate[,2,2] = .65
+rate
+```
+
+We then generate **nr.datasets=20** potential outcome datasets with  **get.outcome()**. The function  requires the arrival data  **Arrival** as an input
+```{r}
+Outcome = get.outcome(
+    seed        = 123, 
+    rate        = rate,
+    Arrival     = Arrival)
+```
+
+
+The output **Outcome** is a list of matrices, where each matrix **Outcome[[i]]** has  one row for each patient and one column for each agent.  The n-th row and a-th column corresponds to a potential outcome of the n-th patient when treated with agent a, conditional on the patient's subpopulation and disease. For example the first two patients in the 1st data-set  would respond to the 4th agent, but  fail to respond to agent 3.
+
+```{r}
+Outcome[[1]][1:2,]
+```
+
+
+
+# Design  Parameter
+
+You can specify several design parameters according to your design needs. We elaborate on the most important parameters, and focus  on restricting treatment arms to a subset of subpopulations and diseases; or choosing  hyper-parameter for the Bayesian hierarchical model; and lastly specifying the parameter of the randomization function.
+
+
+## Treatment Eligibility
+You may explore  treatment arms only for a subset of $(d,m)$ combinations of diseases and subpopulations. This can be done by creating an eligibility array **eligibility.array**, 
+where **eligibility.array[d,a,m]** equals  one if  agent a is a treatment option for disease/subpopulation (d,m) and zero otherwise. For a design without an active control the user has to set the first column of the array equal to zero, i.e.  **eligibility.array[,1,] =0**.
+As an example, let's say we  want to test 3 experimental arms against a disease-specific  control arm. The second  experimental agent will  be tested  only in the first subpopulation and only for the first disease. All other arms are tested for each $(d,m)$ combination. 
+
+```{r}
+eligibility.array         = array(1, dim = c(2,4,3), dimnames=NAME)
+eligibility.array[,3,-1]  = 0
+eligibility.array[-1,3,1] = 0
+eligibility.array
+```
+
+## Prior parameters 
+
+Adaptive randomization is currently implemented as a binary Probit-regression model, i.e a  normal cdf link function $g = \Phi$, which relates the linear predictor with the probability of treatment success. The probability  model for the treatment outcome  equals  
+$$P(R_i = 1 | D_i=d, M_i=m, A_i = a) = p_{d,m,a} = \Phi(\theta_{d,m,a}).$$
+
+The array $\theta = \{ \theta_{d,m,a} \}$ follows a  Gaussian prior, 
+where each $\theta_{d,m,a}$ is  decomposed into independent Gaussian components
+$\theta_{d,m,a}= \theta_{d,m,0} +I(a>0) \zeta_{d,a,m}.$
+The probability $\Phi(\theta_{d,m,0}) = \Phi(\alpha_d + \alpha_{d,m})$
+corresponds to the response probability of the standard-of-care, 
+such that $\alpha_d \sim N(\mu_d, W_1)$ and $\alpha_{d,m} \sim N(\mu_{d,m}, W_2)$.
+Moreover,  $\zeta_{d,m,a} = \beta_a + \beta_{m,a} + \beta_{d,m,a}$ represents the treatment effect on the inverse normal scale. Here  $\beta_a   \sim N( 0, W_3)$ represents the general treatment effect across subpopulations,    $\beta_{a,m} \sim N( 0, W_4)$ is a subpopulation specific random effect,  and $\beta_{d,a,m}  \sim N( 0, W_5)$ is a disease-specific effect within  subpopulation $m$.
+
+Prior parameters have to be specified with  **Prior.list.Fct()**,  which creates the prior covariance matrix of $\theta$ and  internal object for posterior estimation.  The function requires two input parameters, the eligibility array  and a vector which contains the variance parameter $W_i, i=1, \cdots, 5$ for all five parameters. If no  control arms are specified, i.e. **eligibility.array[,1,]=0**, then the function sets the variance $W_1$ and $W_2$ equal to 0 and  suppresses both $\alpha_d$ and $\alpha_{d,m}$ from the model. As an example, we consider a prior such that $p_{d,m,a} = \Phi( \theta_{d,m,a})$ is marginally uniformly distributed on $[0,1]$.
+
+```{r}
+Prior = Prior.list.Fct(
+         eligibility.array=eligibility.array, 
+         Var.vec          =c(W1=.5,W2=.1,W3=.3,W4=.09,W5=.01))
+names(Prior)
+### mean and -1 times the inverse covariance matrix 
+names(Prior$Prior_list)
+```
+
+
+The function **Plot.prior()** can be used to select  suitable prior parameters. With  option **plot.figure=1**, the function plots a 4-panel figure. Panel (a) shows the marginal prior density of the response probability $p_{d,m,a}, a>0$; panel (b) shows the joined  prior densities $(p_{d,m,a}, p_{d',m,a})$ for $d\neq d', a>0$; panel (c) shows the density of $(p_{d,m,a}, p_{d,m',a})$  for $m\neq m'$;  and panel (d) shows  $(p_{d,m,a}, p_{d',m',a})$ for  $d\neq d', m\neq m'$.
+
+```{r,eval=TRUE, fig.width=9, fig.height=3}
+Plot.prior(Var=c(.5,.1,.3,.09,.01), plot.figure=1)
+```
+
+With option **plot.figure=2** the function shows the conditional distribution of $(p_{d,m,a}, p_{d',m,a})$ given the control treatment arm $(p_{d,m,0}, p_{d',m,0})$ for distinct disease  $d\neq d'$ in the same subpopulation. 
+
+```{r,eval=TRUE,fig.width=8, fig.height=8}
+Plot.prior(Var=c(.5,.1,.3,.09,.01), plot.figure=2)
+```
+
+Lastly, the  option **plot.figure=3** shows the conditional distribution  $(p_{d,m,a}, p_{d',m',a})$ for distinct disease $d\neq d'$ in different  subpopulation  $m \neq m'$, given the control treatment arm $(p_{d,m,0}, p_{d',m',0})$ . 
+
+```{r,eval=TRUE,fig.width=8, fig.height=8}
+Plot.prior(Var=c(.5,.1,.3,.09,.01), plot.figure=3)
+```
+
+
+## Randomization Parameters
+Response-adaptive randomization is implemented through the model 
+$$
+P[ C_i = a | D_i=d, M_i=m, \Sigma_i ] \propto S_{d,m,a}(i) \exp( 5 ** (N^\star  -  N_{d,m,0}(i) )_+ ) I_{d,m,a}(i).
+$$
+where $x_+ = x I(x>0)$,  $N^\star$ is a design parameter, and $C_i=a$ is the event of randomizing the $i$-th patient to agent $a$ conditional on  the disease and subpopulation $(D_i=d,M_i=m)$. Here $I_{d,m,a}(i)=1$ if agent $a$ is still active for the combination $(d,m)$ at arrival of the i-th patient and 0 otherwise. 
+
+For trials with a  control arm, the statistics $S_{d,m,a}(i)$ equals
+$$S_{d,m,a}(i) \propto P[  p_{d,m,a} >   p_{d,m,0}  |  \Sigma_i]^{h(i, d, m )},$$
+ for  $a>0$ 
+and for the control arm
+$$S_{d,m,0}(i) \propto
+\exp  \{  c [ \max_{a>0} N'_{d,m,a}(i)   -  N'_{d,m,0}(i)  ]   \},$$
+where $N'_{d,m,a}(i)$ represents the number of patients randomized to agent $a$ with disease/subpopulation $(d,m)$. 
+For trials without a control arm $S_{d,m,a}(i)$  equals
+$$S_{d,m,a}(i) \propto P[ \cap_{a'\neq a} \{ p_{d,m,a} > p_{d,m,0} \}  |  \Sigma_i]^{h(i, m,d )}.$$ 
+
+The package implements the  function $h(i, d,m)=A*N_{d,m}(i)^b$, where the parameters **A** and **b** can be a scalar and identical for each disease and subpopulation $(d,m)$ or dependent on $(d,m)$.
+
+If the planned total sample size for each combination $(d,m)$ is identical, we recommend choosing **A,b** identical across all combinations. If the planned total sample size  differs across $(d,m)$, then **A,b** should be specified as an array, where  $A[d,a,m], b[d,a,m]$ $a\geq 1$ represents the parameter of $h(i, d,m)=a**N_{d,m}(i)^b$ for the combination  $(d,m)$.
+Since we specified a total sample size of  $N_{d,m}=100$  patients for each   disease and subpopulation  (d,m), we  use identical parameter and specify $h$ such that
+$h(i,d,m) = 1$ after half of the total number of patient in $(d,m)$ are randomized, i.e.  $N_{d,m}(i)= N_{d,m}/2 = 50$, and $h(i,d,m) = 4$ at the end of the trial when $N_{d,m}(i)= N_{d,m} = 100$.
+
+```{r}
+N   =100
+b   =-log(4)/log(.5)
+A   = 4/N^b
+```
+```{r, echo=FALSE, fig.width=7, fig.height=3} 
+par(mar=c(4,3,0,0))
+plot(1:N, A * (1:N)^b,  t="l",  col="blue", xlab="patient i", ylab=expression(h[a,d,m](i)) )
+abline(h=1)
+abline(h=4)
+abline(v=50)
+```
+
+The randomization parameters are saved as a list
+
+```{r}
+rand.vec =list(a = A, b = b, c = .01, N.star = 10)
+```
+
+where in addition to **A** and **b**, we also require a minimum of **N.star=10** patients to be randomized to each $(d,m,a)$ combination.
+
+
+
+
+## Decision boundaries
+
+Early stopping rules for futility and efficacy  are based on stopping such that  the combination $(d,m,a)$ is 
+stopped for efficacy if $V'_{d,m,a} \geq b'_{d,m,a}(i)$ or stopped for futility if $V''_{d,m,a} \leq b''_{d,m,a}$.
+
+For the SSD design, $V'_{d,m,a}$ is the z-statistics for binary data, and for the SFD design $V'_{d,m,a}$ is the maximum of the z-statistics over all disease $d$ in $(d,m,a)$. The  futility statistics $V''_{d,m,a}$ is the posterior probability of a positive treatment effect for both designs. The stopping functions equal 
+$$b'_{d,m,a}(i) = \lambda'_{d,m,a}  ( 1 + s_1  s_2 ^{\overline{N}_{d,m,a}(i) - N.min} )$$
+and
+$$b''_{d,m,a}(i)= \lambda''  (1- s_3 ^{ \overline{N}_{d,m,a}(i) } )$$.
+
+For both functions $\overline{N}_{d,m,a}(i) = N_{d,m,a}(i)$ for the SSD design,
+wheras   $\overline{N}_{d,m,a}(i) = \sum_d N_{d,m,a}(i)$ for the SFD design. Here we select  efficacy and futility boundary parameters  $\lambda'_{d,m,a}=2, s_1=2,s_3=.8$ and  $\lambda''=.05, s_3=0.8$ and plot both  boundaries   in the following figure 
+
+```{r, echo=FALSE, fig.width=7, fig.height=4}
+par(mfrow=c(1,2), mar=c(4,3,1,0))
+plot(5:30, 2*(1+2*.8 ^ (5:30-5)),  t="l",  col="blue", ylim=c(0,6),
+     main="efficacy bounary", xlab="patient i", ylab=expression(b[a,d,m](i)) )
+
+plot(1:30, .05*(1-.8 ^ (1:30)),  t="l", col="blue", ylim=c(0,.07),
+     main="futility bounary", xlab="patient i", ylab=expression(b[a,d,m](i)) )
+```
+
+The stopping parameters $s_1,s_2,s_3, \lambda', \lambda'', N_{\min}$ are saved as a list 
+
+```{r}
+stopping.rules = list(b.futil      = .05, ## lambda''
+                      shape.futi   = .9,  ## s_3 
+                      b.effic      = 2,   ## lambda'
+                      shape1.effic = 2,   ## s_1
+                      shape2.effic = .8,  ## s_2
+                      N.min        = 15)
+```
+
+
+
+# Simulating trials
+
+The function **Simulate.trial()** simulates Bayesian  response-adaptive multi-disease, multi-subpopulation trials, and  requires
+
+(1) the arrival data **Arrival**,
+
+(2) the potential outcome data **Outcome**,
+
+(3) the prior parameterd **Prior**,
+
+(4) the parameters for the response-adaptive randomization algorithm **rand.vec** and,
+
+(5) the list of parameters for the early stopping boundaries **stopping.rules**.
+
+We generated all five objects already. In addition, two more parameters have to be specified, namely **Time.Delay** and **Design**. The variable **Time.Delay** is the time period between the beginning of the treatment and the time when the treatment outcome  is evaluated. The variable **Design** is a vector of two elements, where **Design[1]** represents the design option, with $=1$ for the SFD and $=2$ for the SSD. The second element  **Design[2]** represents the randomization option, with  $=1$ if a standard-of-care control arm exists, $=2$ if a historical estimate of $p_{d,m,0}$ for the standard-of-care exists and should be used for the randomization statistics, and $=3$ if no estimate of $p_{d,m,0}$ exists. As explained above, if **Design[2]=3** then $S_{d,m,a}(i) \propto P[ \cap_{a'\neq a} \{ p_{d,m,a} > p_{d,m,0} \}  |  \Sigma_i]^{h(i, d, m )}$ will be used.  
+
+If you choose to use historical estimates of $p_{d,m,0}$, i.e.  **Design[2]=2**, then you have to specify these estimates as a matrix **p.historical**, where the element **p.historical[d,m]** is the probability of a positive response for the $(d,m)$ disease-subpopulation combination.
+
+
+We select a SSD with active control agent
+
+```{r}
+Time.Delay= 8
+Design    = c(2,1)
+```
+
+## Output options
+
+The simulation output is specified through the vector  **Check**, which has  6  elements, **c(drop, alloc, resp.pr, stat, stat.all, sim.initial)**, all of which should be **FALSE** or **TRUE**. 
+
+The first  component, **Drop**, specifies whether stopping rules should be applied. The next three arguments **alloc, resp.pr** and **stat** control if patient allocation, the empirical response probabilities and the test statistics at arrival of each patient should be returned. If **Check["stat.all"]** equals **FALSE** then the futility and efficacy statistics for the combination **DAM.check = c(d, a, m)** is monitored during the  trial. If last component **Check["sim.initial"]** is **TRUE** then trials are  simulated only until the arrival of the $i^\star$-th patient, where $i^\star = \min \{i : N_{d,m,a}>N_{\min}$ for some $(d,m,a) \}$. As an example,  we apply  early stopping  rules and save the patient allocation  and the efficacy statistics for all  combinations $(d,a,m)$.
+```{r}
+Check = c(drop        = TRUE,
+          alloc       = TRUE,
+          resp.pr     = FALSE,
+          stat        = TRUE,
+          stat.all    = TRUE,
+          sim.initial = FALSE)
+
+DAM.check = c(d=1, a=1, m=1)
+```
+And  simulate 20 trials with **Simulate.trial()**
+```{r, eval=TRUE}
+trial.outcome = Simulate.trial(
+   seed                = 111,
+   ArrivalData         = Arrival,
+   ResponseData        = Outcome,
+   Time.Delay          = Time.Delay,
+   Design              = Design,
+   Prior               = Prior,
+   rand.vec            = rand.vec,
+   stopping.rules      = stopping.rules,
+   Check               = Check)
+```
+
+
+The output is a list of trial results, in this case 20 trials, with the output  options specified in **Check**
+```{r, eval=TRUE}
+## number of trials
+length(trial.outcome)
+## output for the 20th trial
+names(trial.outcome[[20]])
+```
+
+The element **trial.outcome[[i]]$status** gives an overview of the trial, we check  the results for the second biomarker-subpopulation
+```{r}
+trial.outcome[[20]]$status[,,,"module2"]
+```
+The first slice of the array **status** returns the status of each combination of agents and diseases, where $=-1$ denote that the agent was not eligible for the combination, $=0$ that agent was dropped early for futility, $=1$ not dropped for efficacy or futility; and $=2$ stopped for efficacy. The second slice **closing_time** gives the closing time for  arms that were  stopped  early for futility or efficacy.  Lastly, the slices **efficacy_stat** and **futility_stat** return the efficacy and futility statistics at the end of the trial.
+
+Similarly, the output elements **Resp_RiskPop** and **Resp_Events** return the number of observed outcomes and the number of observed positive outcomes at the end of the trial for each combination $(d,m,a)$ of disease, mutations and arms. 
+
+```{r}
+trial.outcome[[20]]$Resp_RiskPop[,,"module2"] 
+trial.outcome[[20]]$Resp_Events[,,"module2"]
+## response probability
+trial.outcome[[20]]$Resp_Events[,,"module2"]/
+trial.outcome[[20]]$Resp_RiskPop[,,"module2"] 
+```
+Since we specified the patient allocation in **Check**,  we can also monitor patient allocation during the trial.
+```{r, , fig.width=7, fig.height=4}
+Col = c("black", "red", "green", "blue")
+par(mfrow=c(1,2), mar=c(4,4,2,0))
+plot( c(1,1), c(0,0), xlim=c(0,601), xlab="total number of patients i", ylab="Randomized to (1,a,2)", 
+      ylim=c(0,max(trial.outcome[[20]]$alloc[,,,2])), main="disease 1" )
+for(a in 1:4)  lines(1:601, trial.outcome[[20]]$alloc[1,a,,2], col=Col[a] )
+plot( c(1,1), c(0,0), xlim=c(0,601), xlab="total number of patients i", ylab="Randomized to (2,a,2)", 
+      ylim=c(0,max(trial.outcome[[20]]$alloc[,,,2])), main="disease 2" )
+for(a in 1:4)  lines(1:601, trial.outcome[[20]]$alloc[2,a,,2], col=Col[a] )
+legend("topleft", legend = c("Control", paste("Agent", 1:3)), text.col = Col, bty = "n")
+```
+
