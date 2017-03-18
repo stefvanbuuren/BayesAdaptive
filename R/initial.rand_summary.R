@@ -28,9 +28,8 @@
 #' eligibility.TRUE[1,2:3,1] = TRUE
 #' initial.rand.summary(eligibility.TRUE)
 #'
-#' #@export
+#' @export
 #' @author Steffen Ventz  \email{ventzer@@yahoo.de}
-#'
 
 
 initial.rand.summary = function(eligibility.array){

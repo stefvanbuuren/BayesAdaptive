@@ -36,7 +36,6 @@ eligibility.TRUE[3,3:4,2] = TRUE
 eligibility.TRUE[1,2:3,1] = TRUE
 initial.rand.summary(eligibility.TRUE)
 
-#@export
 }
 \author{
 Steffen Ventz  \email{ventzer@yahoo.de}

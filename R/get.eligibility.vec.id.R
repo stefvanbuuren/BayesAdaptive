@@ -16,7 +16,7 @@
 #' eligibility.array = array(1, c(3, 5, 2))
 #' eligibility.array[3,3:4,2] = 0
 #' eligibility.array[1,2:3,1] = 0
-#' get.eligibility.vec.in(eligibility.array)
+#' BayesAdaptive:::get.eligibility.vec.in(eligibility.array)
 #'
 #' @author Steffen Ventz \email{ventzer@@yahoo.de}
 #'

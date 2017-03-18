@@ -30,7 +30,7 @@ If new data become available, then \code{Any.change=TRUE} and
 The number of observed events and responders by disease are update by the newly available data.
 }
 \examples{
-update_Data_Fct(T.i=0, NULL, NULL, NULL, Dim=c(2,4,2), Initial=TRUE)
+\donttest{update_Data_Fct(T.i=0, NULL, NULL, NULL, Dim=c(2,4,2), Initial=TRUE)}
 }
 \author{
 Steffen Ventz  \email{ventzer@yahoo.de}

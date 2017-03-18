@@ -16,7 +16,7 @@
 #' \code{Resp_Delay}, \code{Resp_RiskPop}, \code{Resp_Events} are updated according newly available data.
 #'
 #' @examples
-#' update_Data_Fct(T.i=0, NULL, NULL, NULL, Dim=c(2,4,2), Initial=TRUE)
+#' \donttest{update_Data_Fct(T.i=0, NULL, NULL, NULL, Dim=c(2,4,2), Initial=TRUE)}
 #' @keywords internal
 #'
 #' @author Steffen Ventz  \email{ventzer@@yahoo.de}
