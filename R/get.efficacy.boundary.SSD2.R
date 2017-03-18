@@ -40,9 +40,6 @@
 #' @param Successes
 #' A matrix of observed positive outcomes (rows represent diseases and columns agents).
 #'
-#' @param n.da
-#' Vector of length 2 that indicates the number of disease and the number of experimental agents
-#'
 #' @param n.itr
 #' Vector of number of trials that should be generated per iteration
 #'

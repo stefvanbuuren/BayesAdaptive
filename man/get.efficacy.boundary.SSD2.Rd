@@ -42,8 +42,6 @@ arrival time, disease type and the subpopulation.}
 \item{p.A}{Matrix of alternative probabilityies, for hypothesis testing of the form simple versus simple}
 
 \item{p.0}{Matrix of null probabilityies, for hypothesis testing of the form simple versus simple}
-
-\item{n.da}{Vector of length 2 that indicates the number of disease and the number of experimental agents}
 }
 \description{
 Estimate the efficacy boundary for the SSD
