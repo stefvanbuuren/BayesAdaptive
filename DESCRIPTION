@@ -1,7 +1,6 @@
 Package: BayesAdaptive
 Type: Package
-Title: Bayesian response-adaptive designs for multi-arm sequential
-        clinical trials.
+Title: Bayesian response-adaptive designs for multi-arm sequential clinical trials
 Version: 1.1
 Date: 2017-03-18
 Author: Steffen Ventz
@@ -12,5 +11,4 @@ Imports: mnormt, fields, parallel, mvtnorm
 Suggests: knitr
 VignetteBuilder: knitr
 NeedsCompilation: no
-Packaged: 2015-06-12 02:05:46 UTC; steffen
 RoxygenNote: 6.0.1
